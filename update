@@ -1,0 +1,45 @@
+#!/usr/bin/python3
+
+import http.client
+import json
+import re
+import sys
+import yaml
+
+
+def main(filename):
+    print("updating sources in ", filename)
+    with open(filename, 'r') as fh:
+        config = yaml.load(fh, Loader=yaml.CLoader)
+    
+    url_regex = re.compile('https:\/\/github\.com\/([^/]+)/([^/]+)/*')
+    
+    for module in config['modules']:
+        print("module:", module['name'])
+        for source in module['sources']:
+            if source['type'] == 'archive' and 'url' in source:
+                print(source['url'])
+                match = url_regex.match(source['url'])
+                repo_owner = match[1]
+                repo_name = match[2]
+                
+                headers = {'Content-type': 'application/json', 'User-Agent': 'Python'}
+                api_url = "/repos/{}/{}/releases".format(repo_owner, repo_name)
+                print(api_url)
+                connection = http.client.HTTPSConnection("api.github.com")
+                connection.request("GET", api_url, headers=headers)
+                response = connection.getresponse()
+                body = response.read().decode()
+                connection.close()
+                result = json.loads(body)
+                last_tag = result[0]['tag_name']
+                
+                new_url = "https://github.com/{}/{}/archive/refs/tags/{}.tar.gz".format(repo_owner, repo_name, last_tag)
+                if new_url != source['url']:
+                    print("new release:", new_url)
+
+### ENTRY POINT ###
+
+if __name__ == '__main__':
+    filename = sys.argv[1]
+    main(filename)
