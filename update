@@ -3,6 +3,7 @@
 import http.client
 import json
 import re
+import subprocess
 import sys
 import yaml
 
@@ -40,8 +41,10 @@ def main(filename):
         pass
 
 def check_for_new(repo_owner, repo_name):
-    headers = {'Content-type': 'application/json', 'User-Agent': 'Python'}
-    connection, response = get_connection("GET", "https://api.github.com/repos/{}/{}/releases".format(repo_owner, repo_name))
+    connection, response = get_connection(
+        "GET",
+        "https://api.github.com/repos/{}/{}/releases".format(repo_owner, repo_name),
+        {'Content-type': 'application/json', 'User-Agent': 'Python'})
     body = response.read().decode()
     connection.close()
     result = json.loads(body)
@@ -49,16 +52,12 @@ def check_for_new(repo_owner, repo_name):
 
 def update_sha256(url):
     tmpfile = "/tmp/sha256tmpfile"
-    
-    connection, response = get_connection("GET", url)
-    with open(tmpfile, "wb") as fh:
-        while chunk := response.read(200):
-            fh.write(chunk)
-    connection.close()
+    download_file(url, tmpfile)
 
-    # TODO: Generate new sha256 sum from file
-    
-    pass
+    output = cmd("sha256sum {}".format(tmpfile))
+    sha = output.split(' ')[0]
+    print(sha)
+    return sha
 
 def get_connection(method, url, headers=None):
     print("getting connection:", url)
@@ -83,6 +82,21 @@ def get_connection(method, url, headers=None):
         return get_connection(method, response_headers['Location'], headers)
     
     return connection, response
+
+def download_file(url, filename):
+    connection, response = get_connection("GET", url)
+    with open(filename, "wb") as fh:
+        while chunk := response.read(200):
+            fh.write(chunk)
+    connection.close()
+
+def cmd(command):
+    result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout = result.stdout.decode('utf-8').rstrip("\n")
+    stderr = result.stderr.decode('utf-8').rstrip("\n")
+    if result.returncode != 0:
+        raise Exception("Command returned code {}".format(result.returncode))
+    return stdout
     
 
 ### ENTRY POINT ###
