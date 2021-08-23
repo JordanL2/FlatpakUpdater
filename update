@@ -13,6 +13,7 @@ def main(filename):
         config = yaml.load(fh, Loader=yaml.CLoader)
     
     url_regex = re.compile('https:\/\/github\.com\/([^/]+)/([^/]+)/*')
+    found_new = False
     
     for module in config['modules']:
         print("module:", module['name'])
@@ -22,21 +23,67 @@ def main(filename):
                 match = url_regex.match(source['url'])
                 repo_owner = match[1]
                 repo_name = match[2]
-                
-                headers = {'Content-type': 'application/json', 'User-Agent': 'Python'}
-                api_url = "/repos/{}/{}/releases".format(repo_owner, repo_name)
-                print(api_url)
-                connection = http.client.HTTPSConnection("api.github.com")
-                connection.request("GET", api_url, headers=headers)
-                response = connection.getresponse()
-                body = response.read().decode()
-                connection.close()
-                result = json.loads(body)
-                last_tag = result[0]['tag_name']
-                
-                new_url = "https://github.com/{}/{}/archive/refs/tags/{}.tar.gz".format(repo_owner, repo_name, last_tag)
-                if new_url != source['url']:
+
+                #last_tag = check_for_new(repo_owner, repo_name)
+                #new_url = "https://github.com/{}/{}/archive/refs/tags/{}.tar.gz".format(repo_owner, repo_name, last_tag)
+                #if new_url != source['url']:
+                new_url = source['url']
+                if True:
                     print("new release:", new_url)
+                    found_new = True
+                    source['url'] = new_url
+                    source['sha256'] = update_sha256(new_url)
+            break
+    
+    if found_new:
+        # TODO: write updated config file
+        pass
+
+def check_for_new(repo_owner, repo_name):
+    headers = {'Content-type': 'application/json', 'User-Agent': 'Python'}
+    connection, response = get_connection("GET", "https://api.github.com/repos/{}/{}/releases".format(repo_owner, repo_name))
+    body = response.read().decode()
+    connection.close()
+    result = json.loads(body)
+    return result[0]['tag_name']
+
+def update_sha256(url):
+    tmpfile = "/tmp/sha256tmpfile"
+    
+    connection, response = get_connection("GET", url)
+    with open(tmpfile, "wb") as fh:
+        while chunk := response.read(200):
+            fh.write(chunk)
+    connection.close()
+
+    # TODO: Generate new sha256 sum from file
+    
+    pass
+
+def get_connection(method, url, headers=None):
+    print("getting connection:", url)
+    https_url_regex = re.compile('([^/]+)://([^/]+)(.+)')
+    match = https_url_regex.match(url)
+    url_protocol = match[1]
+    url_domain = match[2]
+    url_path = match[3]
+    if url_protocol != 'https':
+        raise Exception("Don't recognise protocol {}".format(url_protocol))
+
+    if headers is None:
+        headers = {'User-Agent': 'Python'}
+    
+    # Test connection for redirect
+    connection = http.client.HTTPSConnection(url_domain)
+    connection.request(method, url_path, headers=headers)
+    response = connection.getresponse()
+    response_headers = dict(response.getheaders())
+    if 'Location' in response_headers and response_headers['Location'] != url:
+        connection.close()
+        return get_connection(method, response_headers['Location'], headers)
+    
+    return connection, response
+    
 
 ### ENTRY POINT ###
 
