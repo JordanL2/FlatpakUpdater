@@ -19,7 +19,6 @@ def main(filename):
         print("module:", module['name'])
         for s, source in enumerate(module['sources']):
             if source['type'] == 'archive' and 'url' in source:
-                print(source['url'])
                 match = github_regex.match(source['url'])
                 if match:
                     repo_owner = match[1]
@@ -28,7 +27,7 @@ def main(filename):
                     last_tag = check_for_new_github(repo_owner, repo_name)
                     new_url = "https://github.com/{}/{}/archive/refs/tags/{}.tar.gz".format(repo_owner, repo_name, last_tag)
                     if new_url != source['url']:
-                        print("new release:", new_url)
+                        print("- new release:", new_url)
                         new_sha = update_sha256(new_url)
                         update_file(filename, ['modules', m, 'sources', s, 'url'], new_url)
                         update_file(filename, ['modules', m, 'sources', s, 'sha256'], new_sha)
@@ -49,11 +48,9 @@ def update_sha256(url):
 
     output = cmd("sha256sum {}".format(tmpfile))
     sha = output.split(' ')[0]
-    print(sha)
     return sha
 
 def get_connection(method, url, headers=None):
-    print("getting connection:", url)
     https_url_regex = re.compile('([^/]+)://([^/]+)(.+)')
     match = https_url_regex.match(url)
     if not match:
@@ -112,7 +109,8 @@ def update_file(filename, path, new_value):
             if len(key) > 0:
                 key = key[0:-1]
             value = match[4]
-            
+  
+            # Update current path
             while len(this_path) > 0 and this_path[-1][0] > i:
                 this_path.pop()
             if len(this_path) > 0 and this_path[-1][0] == i:
