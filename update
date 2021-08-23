@@ -25,15 +25,14 @@ def main(filename):
                     repo_owner = match[1]
                     repo_name = match[2]
 
-                    last_tag = 'v11.3'
-                    #last_tag = check_for_new_github(repo_owner, repo_name)
+                    last_tag = check_for_new_github(repo_owner, repo_name)
                     new_url = "https://github.com/{}/{}/archive/refs/tags/{}.tar.gz".format(repo_owner, repo_name, last_tag)
                     if new_url != source['url']:
                         print("new release:", new_url)
                         new_sha = update_sha256(new_url)
                         update_file(filename, ['modules', m, 'sources', s, 'url'], new_url)
                         update_file(filename, ['modules', m, 'sources', s, 'sha256'], new_sha)
-            break #TODO remove
+            break
 
 def check_for_new_github(repo_owner, repo_name):
     connection, response = get_connection(
@@ -97,9 +96,56 @@ def cmd(command):
         raise Exception("Command returned code {}".format(result.returncode))
     return stdout
 
-def update_file(filename, path, value):
-    pass
+def update_file(filename, path, new_value):
+    yml_line_regex = re.compile('^( *)((?:- )?)((?:[^ :]+:)?)\s*(.*?)$')
+    this_path = []
+    with open(filename, 'r') as fh:
+        lines = [i.rstrip() for i in fh.readlines()]
+        for l, line in enumerate(lines):
+            if line == '':
+                continue
+            match = yml_line_regex.match(line)
+            if not match:
+                raise Exception("Invalid line: `{}`".format(line))
+            i = len(match[1])
+            array = match[2] != ''
+            key = match[3]
+            if len(key) > 0:
+                key = key[0:-1]
+            value = match[4]
+            
+            while len(this_path) > 0 and this_path[-1][0] > i:
+                this_path.pop()
+            if len(this_path) > 0 and this_path[-1][0] == i:
+                if array:
+                    this_path[-1][1] += 1
+                    if key:
+                        this_path.append([i + 2, key])
+                elif key:
+                    this_path[-1][1] = key
+            if len(this_path) == 0 or this_path[-1][0] < i:
+                if array:
+                    this_path.append([i, 0])
+                if key:
+                    if array:
+                        this_path.append([i + 2, key])
+                    else:
+                        this_path.append([i, key])
+            
+            # If this is the target path, replace the value
+            if [p[1] for p in this_path] == path:
+                new_line = ' ' * i
+                if array:
+                    new_line += '- '
+                if key:
+                    new_line += "{}: ".format(key)
+                new_line += new_value
+                lines[l] = new_line
     
+    # Write new version of file
+    with open(filename, 'w') as fh:
+        for line in lines:
+            fh.write("{}\n".format(line))
 
 ### ENTRY POINT ###
 
