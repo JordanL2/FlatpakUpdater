@@ -32,7 +32,6 @@ def main(filename):
                         new_sha = update_sha256(new_url)
                         update_file(filename, ['modules', m, 'sources', s, 'url'], new_url)
                         update_file(filename, ['modules', m, 'sources', s, 'sha256'], new_sha)
-            break
 
 def check_for_new_github(repo_owner, repo_name):
     connection, response = get_connection(
