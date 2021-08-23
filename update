@@ -13,34 +13,29 @@ def main(filename):
     with open(filename, 'r') as fh:
         config = yaml.load(fh, Loader=yaml.CLoader)
     
-    url_regex = re.compile('https:\/\/github\.com\/([^/]+)/([^/]+)/*')
-    found_new = False
+    github_regex = re.compile('https:\/\/github\.com\/([^/]+)/([^/]+)/*')
     
-    for module in config['modules']:
+    for m, module in enumerate(config['modules']):
         print("module:", module['name'])
-        for source in module['sources']:
+        for s, source in enumerate(module['sources']):
             if source['type'] == 'archive' and 'url' in source:
                 print(source['url'])
-                match = url_regex.match(source['url'])
-                repo_owner = match[1]
-                repo_name = match[2]
+                match = github_regex.match(source['url'])
+                if match:
+                    repo_owner = match[1]
+                    repo_name = match[2]
 
-                #last_tag = check_for_new(repo_owner, repo_name)
-                #new_url = "https://github.com/{}/{}/archive/refs/tags/{}.tar.gz".format(repo_owner, repo_name, last_tag)
-                #if new_url != source['url']:
-                new_url = source['url']
-                if True:
-                    print("new release:", new_url)
-                    found_new = True
-                    source['url'] = new_url
-                    source['sha256'] = update_sha256(new_url)
-            break
-    
-    if found_new:
-        # TODO: write updated config file
-        pass
+                    last_tag = 'v11.3'
+                    #last_tag = check_for_new_github(repo_owner, repo_name)
+                    new_url = "https://github.com/{}/{}/archive/refs/tags/{}.tar.gz".format(repo_owner, repo_name, last_tag)
+                    if new_url != source['url']:
+                        print("new release:", new_url)
+                        new_sha = update_sha256(new_url)
+                        update_file(filename, ['modules', m, 'sources', s, 'url'], new_url)
+                        update_file(filename, ['modules', m, 'sources', s, 'sha256'], new_sha)
+            break #TODO remove
 
-def check_for_new(repo_owner, repo_name):
+def check_for_new_github(repo_owner, repo_name):
     connection, response = get_connection(
         "GET",
         "https://api.github.com/repos/{}/{}/releases".format(repo_owner, repo_name),
@@ -97,6 +92,9 @@ def cmd(command):
     if result.returncode != 0:
         raise Exception("Command returned code {}".format(result.returncode))
     return stdout
+
+def update_file(filename, path, value):
+    pass
     
 
 ### ENTRY POINT ###
