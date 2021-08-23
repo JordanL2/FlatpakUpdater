@@ -58,17 +58,21 @@ def get_connection(method, url, headers=None):
     print("getting connection:", url)
     https_url_regex = re.compile('([^/]+)://([^/]+)(.+)')
     match = https_url_regex.match(url)
+    if not match:
+        raise Exception("URL is invalid: {}".format(url))
     url_protocol = match[1]
     url_domain = match[2]
     url_path = match[3]
-    if url_protocol != 'https':
+    
+    if url_protocol == 'https':
+        connection = http.client.HTTPSConnection(url_domain)
+    else:
         raise Exception("Don't recognise protocol {}".format(url_protocol))
 
     if headers is None:
         headers = {'User-Agent': 'Python'}
     
     # Test connection for redirect
-    connection = http.client.HTTPSConnection(url_domain)
     connection.request(method, url_path, headers=headers)
     response = connection.getresponse()
     response_headers = dict(response.getheaders())
