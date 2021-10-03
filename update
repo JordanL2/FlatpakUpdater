@@ -16,21 +16,22 @@ def main(filename):
     github_regex = re.compile('https:\/\/github\.com\/([^/]+)/([^/]+)/*')
     
     for m, module in enumerate(config['modules']):
-        print("module:", module['name'])
-        for s, source in enumerate(module['sources']):
-            if source['type'] == 'archive' and 'url' in source:
-                match = github_regex.match(source['url'])
-                if match:
-                    repo_owner = match[1]
-                    repo_name = match[2]
-
-                    last_tag = check_for_new_github(repo_owner, repo_name)
-                    new_url = "https://github.com/{}/{}/archive/refs/tags/{}.tar.gz".format(repo_owner, repo_name, last_tag)
-                    if new_url != source['url']:
-                        print("- new release:", new_url)
-                        new_sha = update_sha256(new_url)
-                        update_file(filename, ['modules', m, 'sources', s, 'url'], new_url)
-                        update_file(filename, ['modules', m, 'sources', s, 'sha256'], new_sha)
+        if isinstance(module, dict) and 'sources' in module:
+            print("module:", module['name'])
+            for s, source in enumerate(module['sources']):
+                if source['type'] == 'archive' and 'url' in source:
+                    match = github_regex.match(source['url'])
+                    if match:
+                        repo_owner = match[1]
+                        repo_name = match[2]
+    
+                        last_tag = check_for_new_github(repo_owner, repo_name)
+                        new_url = "https://github.com/{}/{}/archive/refs/tags/{}.tar.gz".format(repo_owner, repo_name, last_tag)
+                        if new_url != source['url']:
+                            print("- new release:", new_url)
+                            new_sha = update_sha256(new_url)
+                            update_file(filename, ['modules', m, 'sources', s, 'url'], new_url)
+                            update_file(filename, ['modules', m, 'sources', s, 'sha256'], new_sha)
 
 def check_for_new_github(repo_owner, repo_name):
     connection, response = get_connection(
