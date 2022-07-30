@@ -1,25 +1,32 @@
 #!/usr/bin/python3
 
 import argparse
-from datetime import *
+import datetime
+import fcntl
 import http.client
 import json
+import os
 import re
 import subprocess
 import sys
+import time
 import yaml
 
 
-def main(filename, main_module=None, main_source=None, appdata=None):
-    print("updating sources in ", filename)
+def main(args):
+    filename = args.manifest
+    print("Updating sources in {}...".format(filename))
     with open(filename, 'r') as fh:
         config = yaml.load(fh, Loader=yaml.CLoader)
+    appid = config['app-id']
 
     github_regex = re.compile('https:\/\/github\.com\/([^/]+)/([^/]+)/*')
 
+    version = None
+
     for m, module in enumerate(config['modules']):
         if isinstance(module, dict) and 'sources' in module:
-            print("module:", module['name'])
+            print("Module:", module['name'])
             for s, source in enumerate(module['sources']):
                 if source['type'] == 'archive' and 'url' in source:
                     match = github_regex.match(source['url'])
@@ -30,13 +37,33 @@ def main(filename, main_module=None, main_source=None, appdata=None):
                         last_tag = check_for_new_github(repo_owner, repo_name)
                         new_url = "https://github.com/{}/{}/archive/refs/tags/{}.tar.gz".format(repo_owner, repo_name, last_tag)
                         if new_url != source['url']:
-                            print("- new release:", new_url)
+                            print("- New release:", new_url)
                             new_sha = update_sha256(new_url)
                             update_file(filename, ['modules', m, 'sources', s, 'url'], new_url)
                             update_file(filename, ['modules', m, 'sources', s, 'sha256'], new_sha)
-                            if appdata is not None and module['name'] == main_module and s == main_source:
-                                print("- main module updated, updating {} with new version {}".format(appdata, last_tag))
-                                update_release(appdata, last_tag)
+                            if args.appdata is not None and module['name'] == args.mainmodule and s == args.source:
+                                version = last_tag
+                                print("- Main module updated, updating {} with new version {}".format(args.appdata, version))
+                                update_release(args.appdata, version)
+
+    if args.repo is not None and version is not None:
+        command = "flatpak-builder --repo={}".format(args.repo)
+        if args.gpg_sign is not None:
+            command += " --gpg-sign={}".format(args.gpg_sign)
+        if args.gpg_homedir is not None:
+            command += " --gpg-homedir={}".format(args.gpg_homedir)
+        command += " --force-clean build {}".format(filename)
+        if args.branch is not None:
+            command += " --default-branch={}".format(args.branch)
+        print("\n======================================")
+        print("Building and exporting to repository {}...".format(args.repo))
+        cmd(command, sys.stdout, sys.stderr)
+
+    if args.installrepo is not None and version is not None:
+        print("\n======================================")
+        print("Reinstalling from repo {}...".format(args.installrepo))
+        command = "(flatpak --user remove {0}//{1} -y || true) ; flatpak --user install {2} {0}//{1} -y".format(appid, args.branch, args.installrepo)
+        cmd(command, sys.stdout, sys.stderr)
 
 def check_for_new_github(repo_owner, repo_name):
     connection, response = get_connection(
@@ -52,7 +79,7 @@ def update_sha256(url):
     tmpfile = "/tmp/sha256tmpfile"
     download_file(url, tmpfile)
 
-    output = cmd("sha256sum {}".format(tmpfile))
+    output = cmd("sha256sum {}".format(tmpfile))[0]
     sha = output.split(' ')[0]
     return sha
 
@@ -90,13 +117,56 @@ def download_file(url, filename):
             fh.write(chunk)
     connection.close()
 
-def cmd(command):
-    result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout = result.stdout.decode('utf-8').rstrip("\n")
-    stderr = result.stderr.decode('utf-8').rstrip("\n")
-    if result.returncode != 0:
-        raise Exception("Command returned code {}".format(result.returncode))
-    return stdout
+def set_non_blocking(output):
+    fd = output.fileno()
+    fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+
+def non_blocking_read(output):
+    try:
+        return output.readlines()
+    except:
+        return []
+
+def cmd(command, stdout=None, stderr=None):
+    proc = subprocess.Popen(command,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        bufsize=1)
+
+    stdout_result = ''
+    stderr_result = ''
+    result_code = None
+
+    set_non_blocking(proc.stdout)
+    set_non_blocking(proc.stderr)
+
+    while True:
+        lines = non_blocking_read(proc.stdout)
+        for line in lines:
+            stdout_result += line
+            if stdout is not None:
+                print(line, end='', file=stdout)
+
+        lines = non_blocking_read(proc.stderr)
+        for line in lines:
+            stderr_result += line
+            if stderr is not None:
+                print(line, end='', file=stderr)
+
+        if result_code is not None:
+            break
+        result_code = proc.poll()
+
+        # This fixes a weird bug causing output not to be read correctly
+        time.sleep(0.000001)
+
+    stdout_result = stdout_result.rstrip("\n")
+    stderr_result = stderr_result.rstrip("\n")
+
+    return stdout_result, stderr_result, result_code
 
 def update_file(filename, path, new_value):
     yml_line_regex = re.compile('^( *)((?:- )?)((?:[^ :]+:)?)\s*(.*?)$')
@@ -151,7 +221,7 @@ def update_file(filename, path, new_value):
             fh.write("{}\n".format(line))
 
 def update_release(appdata, last_tag):
-    date = datetime.now().strftime('%Y-%m-%d')
+    date = datetime.datetime.now().strftime('%Y-%m-%d')
     command = "sed -i -e\"s/<release version=\\\".\\+\\\" date=\\\".\\+\\\"\\/>/<release version=\\\"{}\\\" date=\\\"{}\\\"\\/>/\" {}".format(last_tag, date, appdata)
     cmd(command)
 
@@ -164,6 +234,11 @@ if __name__ == '__main__':
     parser.add_argument('--mainmodule', nargs='?', help='main module for application')
     parser.add_argument('--source', nargs='?', type=int, help='zero-indexed index for source of main module that determines app version')
     parser.add_argument('--appdata', nargs='?', help='path of appdata file to update version/date automatically')
+    parser.add_argument('--repo', nargs='?', help='flatpak report to export to')
+    parser.add_argument('--gpg-sign', nargs='?', help='key to sign with')
+    parser.add_argument('--gpg-homedir', nargs='?', help='gpg home directory')
+    parser.add_argument('--branch', nargs='?', help='branch to export as')
+    parser.add_argument('--installrepo', nargs='?', help='repo to reinstall app from')
     args = parser.parse_args()
 
-    main(args.manifest, args.mainmodule, args.source, args.appdata)
+    main(args)
