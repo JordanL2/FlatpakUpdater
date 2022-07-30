@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import argparse
 from datetime import *
 import http.client
 import json
@@ -33,7 +34,7 @@ def main(filename, main_module=None, main_source=None, appdata=None):
                             new_sha = update_sha256(new_url)
                             update_file(filename, ['modules', m, 'sources', s, 'url'], new_url)
                             update_file(filename, ['modules', m, 'sources', s, 'sha256'], new_sha)
-                            if module['name'] == main_module and s == main_source:
+                            if appdata is not None and module['name'] == main_module and s == main_source:
                                 print("- main module updated, updating {} with new version {}".format(appdata, last_tag))
                                 update_release(appdata, last_tag)
 
@@ -158,12 +159,11 @@ def update_release(appdata, last_tag):
 ### ENTRY POINT ###
 
 if __name__ == '__main__':
-    filename = sys.argv[1]
-    main_module = None
-    main_source = None
-    appdata = None
-    if len(sys.argv) >= 5:
-        main_module = sys.argv[2]
-        main_source = int(sys.argv[3])
-        appdata = sys.argv[4]
-    main(filename, main_module, main_source, appdata)
+    parser = argparse.ArgumentParser(prog='updateflatpak')
+    parser.add_argument('manifest', help='YAML Flatpak manifest to update')
+    parser.add_argument('--mainmodule', nargs='?', help='main module for application')
+    parser.add_argument('--source', nargs='?', type=int, help='zero-indexed index for source of main module that determines app version')
+    parser.add_argument('--appdata', nargs='?', help='path of appdata file to update version/date automatically')
+    args = parser.parse_args()
+
+    main(args.manifest, args.mainmodule, args.source, args.appdata)
