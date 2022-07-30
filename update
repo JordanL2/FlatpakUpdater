@@ -65,6 +65,12 @@ def main(args):
         command = "(flatpak --user remove {0}//{1} -y || true) ; flatpak --user install {2} {0}//{1} -y".format(appid, args.branch, args.installrepo)
         cmd(command, sys.stdout, sys.stderr)
 
+    if args.commit and version is not None:
+        print("\n======================================")
+        print("Committing version {}...".format(version))
+        command = "git commit -am'Version {}'".format(version)
+        cmd(command, sys.stdout, sys.stderr)
+
 def check_for_new_github(repo_owner, repo_name):
     connection, response = get_connection(
         "GET",
@@ -239,6 +245,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpg-homedir', nargs='?', help='gpg home directory')
     parser.add_argument('--branch', nargs='?', help='branch to export as')
     parser.add_argument('--installrepo', nargs='?', help='repo to reinstall app from')
+    parser.add_argument('--commit', action='store_true', help='automatically commit (does not push)')
     args = parser.parse_args()
 
     main(args)
