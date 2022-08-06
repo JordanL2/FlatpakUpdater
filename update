@@ -134,7 +134,7 @@ def non_blocking_read(output):
     except:
         return []
 
-def cmd(command, stdout=None, stderr=None):
+def cmd(command, stdout=None, stderr=None, exit_on_error=True):
     proc = subprocess.Popen(command,
         shell=True,
         stdout=subprocess.PIPE,
@@ -171,6 +171,10 @@ def cmd(command, stdout=None, stderr=None):
 
     stdout_result = stdout_result.rstrip("\n")
     stderr_result = stderr_result.rstrip("\n")
+
+    if exit_on_error and result_code != 0:
+        print(stderr_result, file=sys.stderr)
+        sys.exit(result_code)
 
     return stdout_result, stderr_result, result_code
 
